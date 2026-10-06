@@ -118,6 +118,54 @@ pub fn try_collect<C, I, O, P>(input: &mut Pear<I>, mut p: P) -> Result<C, I>
     Ok(collection)
 }
 
+/// Parses as many `p` as possible until EOF is reached or `p` fails,
+/// collecting them into a `C`. `C` may be empty.
+///
+/// Every successful parse of `p` must advance the input cursor. If `p`
+/// succeeds without consuming any input, an error identifying the position at
+/// which the repetition stalled is returned immediately. The guard state is
+/// local to each `repeat` invocation, so nested `repeat`s are guarded
+/// independently, and `p` is never re-run to produce the diagnostic.
+#[parser(raw)]
+pub fn repeat<C, I, O, P>(input: &mut Pear<I>, mut p: P) -> Result<C, I>
+    where C: Collection<O>,
+          I: Input + Rewind,
+          I::Marker: PartialEq,
+          P: FnMut(&mut Pear<I>) -> Result<O, I>
+{
+    const INFO: crate::input::ParserInfo =
+        crate::input::ParserInfo { name: "repeat", raw: true };
+
+    let mut collection = C::default();
+    loop {
+        if succeeds(input, eof) {
+            return Ok(collection);
+        }
+
+        // FIXME: We should be able to call `parse_marker!` here.
+        let start = input.mark(&INFO);
+
+        match ok(input, |i| p(i)) {
+            Some(val) => {
+                if input.mark(&INFO) == start {
+                    let error = crate::input::Expected::<I>::from(
+                        "repeat: parser succeeded without consuming input");
+                    let context = input.context(start);
+                    return Err(crate::error::ParseError::new(INFO, error, context));
+                }
+
+                collection.push(val);
+            }
+            None => {
+                input.rewind_to(start);
+                break;
+            }
+        }
+    }
+
+    Ok(collection)
+}
+
 /// Parses many `separator` delimited `p`s, the entire collection of which must
 /// start with `start` and end with `end`. `item` Gramatically, this is:
 ///
