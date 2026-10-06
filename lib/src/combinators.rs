@@ -1,4 +1,4 @@
-use crate::input::{Pear, Input, Rewind, Token, Result};
+use crate::input::{Pear, Input, Rewind, Token, ParserInfo, Result};
 use crate::macros::parser;
 use crate::parsers::*;
 
@@ -10,6 +10,66 @@ pub trait Collection<A>: Default + Extend<A> {
 }
 
 impl<A, T: Default + Extend<A>> Collection<A> for T {  }
+
+/// A report of the real input cursors spanned by a single parser run.
+///
+/// The cursors are recorded by [`consumption()`]: `start` is the position of
+/// the input just before the parser ran, and `end` is the position of the
+/// input just after it returned, whether it succeeded or failed with consumed
+/// (committed) input. Because the parser is run exactly once and the input is
+/// never rewound, `end` always reflects the input that was actually consumed:
+/// on a committed failure, already-consumed input is _not_ reported as
+/// unconsumed.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct Consumption<M> {
+    /// Cursor at the input position where the parser started.
+    pub start: M,
+    /// Cursor at the input position where the parser stopped, on success or
+    /// on committed failure.
+    pub end: M,
+}
+
+/// Runs the parser `p` exactly once and reports the real start and stop
+/// cursors of the run alongside its result.
+///
+/// Returns a `(Consumption, Result)` pair. The report is produced on both
+/// success and failure; no input is rewound and no recovery is attempted, so
+/// on a committed failure `consumption.end` is the cursor _after_ any input
+/// the failing parser consumed. For text inputs, cursors are byte offsets
+/// that always fall on UTF-8 character boundaries.
+///
+/// # Example
+///
+/// ```rust
+/// use pear::input::{Pear, Text};
+/// use pear::combinators::consumption;
+/// use pear::parsers::eat;
+/// use pear::macros::parser;
+///
+/// #[parser]
+/// fn ab<'a>(input: &mut Pear<Text<'a>>) -> pear::input::Result<(), Text<'a>> {
+///     eat('a')?;
+///     eat('b')?;
+/// }
+///
+/// let mut input: Pear<Text> = Pear::new("ab");
+/// let (report, result) = consumption(&mut input, |i| ab(i));
+/// assert!(result.is_ok());
+/// assert_eq!(report.start, 0);
+/// assert_eq!(report.end, 2);
+/// ```
+pub fn consumption<I, O, P>(
+    input: &mut Pear<I>,
+    mut p: P
+) -> (Consumption<I::Marker>, Result<O, I>)
+    where I: Input, P: FnMut(&mut Pear<I>) -> Result<O, I>
+{
+    const INFO: ParserInfo = ParserInfo { name: "consumption", raw: true };
+    let start = input.mark(&INFO);
+    let result = p(input);
+    let end = input.mark(&INFO);
+    (Consumption { start, end }, result)
+}
 
 /// Parses `p`, returning `Some` if it succeeds and `None` if it fails. Discards
 /// the error message.
