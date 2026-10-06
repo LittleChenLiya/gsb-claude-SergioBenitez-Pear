@@ -1,4 +1,4 @@
-use crate::input::{Pear, Input, Rewind, Token, Result};
+use crate::input::{Pear, Input, Rewind, Token, Result, ParserInfo};
 use crate::macros::parser;
 use crate::parsers::*;
 
@@ -241,4 +241,106 @@ pub fn prefixed_series<C, I, T, O, P>(
     }
 
     series(input, item, seperator)
+}
+
+/// A report of the input positions that a single parser invocation actually
+/// consumed, together with its result.
+///
+/// Produced by [`consumed()`]. The parser is executed exactly once: `start` is
+/// the cursor immediately before it ran, and `end` is the cursor where the
+/// input stood immediately after it finished. On a committed failure the input
+/// that was already consumed is still reflected in `end`; it is never reported
+/// as unconsumed. For UTF-8 inputs such as [`Text`](crate::input::Text) both
+/// cursors are byte offsets that always lie on a character boundary.
+///
+/// `context` spans the input between `start` and `end`; `result` is the value
+/// or error returned by the parser.
+pub struct Consumption<I: Input, O> {
+    /// The cursor at which the parser started.
+    pub start: I::Marker,
+    /// The cursor at which the parser ended, including input consumed before a
+    /// committed failure.
+    pub end: I::Marker,
+    /// The input spanning from `start` up to but excluding `end`.
+    pub context: I::Context,
+    /// The result of the single parser invocation.
+    pub result: std::result::Result<O, crate::input::ParseError<I>>,
+}
+
+impl<I: Input, O> Consumption<I, O> {
+    /// Returns `true` if the reported parser invocation succeeded.
+    pub fn is_ok(&self) -> bool {
+        self.result.is_ok()
+    }
+
+    /// Returns `true` if the reported parser invocation failed after consuming
+    /// at least one token, that is, the failure was _committed_.
+    pub fn is_committed_failure(&self) -> bool
+        where I::Marker: PartialEq
+    {
+        self.result.is_err() && self.start != self.end
+    }
+}
+
+/// Runs `p` exactly once and reports the true start and end cursors alongside
+/// its result.
+///
+/// Unlike a parser attribute with `rewind`, this neither rewinds the input nor
+/// retries `p`: it is invoked a single time, so its side effects occur once,
+/// and any input consumed before a failure stays consumed and is reflected in
+/// the report's `end` cursor. No recovery strategy is applied; the original
+/// result of `p` is passed through unchanged in [`Consumption::result`].
+///
+/// # Examples
+///
+/// On success the cursors bound exactly the consumed slice:
+///
+/// ```rust
+/// use pear::input::{Pear, Text};
+/// use pear::combinators::consumed;
+/// use pear::parsers::take_while;
+///
+/// let mut input = Pear::from(Text::from("αβγ.."));
+/// let report = consumed(&mut input, |i| take_while(i, |c| c.is_alphabetic()));
+/// assert!(report.is_ok());
+/// assert_eq!(report.start, 0);
+/// assert_eq!(report.end, 6); // three multibyte chars, two UTF-8 bytes each
+/// assert_eq!(report.context.snippet, Some("αβγ"));
+/// assert_eq!(report.result.unwrap(), "αβγ");
+/// ```
+///
+/// After a multibyte character is consumed and the parser then commits to a
+/// failure, `end` is the real cursor past that character and never lands in the
+/// middle of its bytes:
+///
+/// ```rust
+/// use pear::input::{Pear, Text};
+/// use pear::combinators::consumed;
+/// use pear::parsers::{eat, eof};
+///
+/// let source = "中x";
+/// let mut input = Pear::from(Text::from(source));
+/// let report = consumed(&mut input, |i| {
+///     eat(i, '中')?;
+///     eof(i)?;
+///     Ok::<(), _>(())
+/// });
+///
+/// assert!(report.result.is_err());
+/// assert_eq!(report.start, 0);
+/// assert_eq!(report.end, '中'.len_utf8());
+/// assert_eq!(report.context.snippet, Some("中"));
+/// // The end cursor is a valid UTF-8 boundary, not a position inside a byte:
+/// // slicing the source at it succeeds and yields the consumed prefix.
+/// assert_eq!(source.get(..report.end), Some("中"));
+/// ```
+pub fn consumed<I, P, O>(input: &mut Pear<I>, p: P) -> Consumption<I, O>
+    where I: Input, P: FnOnce(&mut Pear<I>) -> Result<O, I>
+{
+    let info = ParserInfo { name: "consumed", raw: true };
+    let start = input.mark(&info);
+    let result = p(input);
+    let end = input.mark(&info);
+    let context = input.context(start);
+    Consumption { start, end, context, result }
 }
