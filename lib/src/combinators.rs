@@ -1,3 +1,4 @@
+use crate::error::Expected;
 use crate::input::{Pear, Input, Rewind, Token, Result};
 use crate::macros::parser;
 use crate::parsers::*;
@@ -109,6 +110,68 @@ pub fn try_collect<C, I, O, P>(input: &mut Pear<I>, mut p: P) -> Result<C, I>
         match ok(input, |i| p(i)) {
             Some(val) => collection.push(val),
             None => {
+                input.rewind_to(start);
+                break;
+            }
+        }
+    }
+
+    Ok(collection)
+}
+
+/// The error message emitted when a parser repeated by [`repeat`] succeeds
+/// without consuming any input.
+const ZERO_PROGRESS_ERROR: &str =
+    "parser in `repeat` succeeded without consuming input";
+
+/// Returns `true` if `error` is a zero-progress error emitted by [`repeat`].
+fn is_zero_progress<T, S>(error: &Expected<T, S>) -> bool {
+    matches!(error, Expected::Other(message) if &**message == ZERO_PROGRESS_ERROR)
+}
+
+/// Parses as many `p` as possible until `p` fails, collecting them into a
+/// `C`. `C` may be empty.
+///
+/// Every successful parse of `p` must advance the cursor: if `p` succeeds
+/// without consuming any input, `repeat` fails immediately with an error
+/// whose context begins where the repetition began instead of looping
+/// forever. Progress is measured by comparing cursor markers before and
+/// after each success; `p` is never re-run for diagnostic purposes.
+///
+/// All guard state is local to each invocation, so nested `repeat`s are
+/// guarded independently, and a zero-progress error from an inner `repeat`
+/// is propagated rather than treated as a normal, repetition-ending failure.
+#[parser(raw)]
+pub fn repeat<C, I, O, P>(input: &mut Pear<I>, mut p: P) -> Result<C, I>
+    where C: Collection<O>,
+          I: Input + Rewind,
+          I::Marker: PartialEq,
+          P: FnMut(&mut Pear<I>) -> Result<O, I>
+{
+    // FIXME: We should be able to call `parse_marker!` here.
+    let info = crate::input::ParserInfo { name: "repeat", raw: true };
+    let mut collection = C::default();
+    loop {
+        let start = input.mark(&info);
+
+        let emit_error = input.emit_error;
+        input.emit_error = false;
+        let result = p(input);
+        input.emit_error = emit_error;
+
+        match result {
+            Ok(value) => {
+                if input.mark(&info) == start {
+                    return parse_error!(ZERO_PROGRESS_ERROR.into());
+                }
+
+                collection.push(value);
+            }
+            Err(error) => {
+                if is_zero_progress(&error.error) {
+                    return Err(error);
+                }
+
                 input.rewind_to(start);
                 break;
             }
