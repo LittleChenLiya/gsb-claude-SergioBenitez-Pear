@@ -1,4 +1,4 @@
-use crate::input::{Show, Length};
+use crate::input::{Show, Length, Position};
 
 pub trait Token<I: Input>: Show + PartialEq<I::Token> { }
 
@@ -71,4 +71,9 @@ pub trait Input: Sized {
     /// Returns a context to identify the input spanning from `mark` until but
     /// excluding the current position.
     fn context(&mut self, _mark: Self::Marker) -> Self::Context;
+
+    /// Returns a read-only observation of the current position: the current
+    /// input unit and the number of units consumed so far, in the input's own
+    /// units. This neither clones nor advances the input.
+    fn position(&self) -> Position<Self>;
 }

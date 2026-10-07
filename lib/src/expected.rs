@@ -32,6 +32,27 @@ impl std::fmt::Debug for CowInlineString {
     }
 }
 
+impl From<&'static str> for CowInlineString {
+    #[inline(always)]
+    fn from(string: &'static str) -> CowInlineString {
+        CowInlineString::Borrowed(string)
+    }
+}
+
+impl From<String> for CowInlineString {
+    #[inline(always)]
+    fn from(string: String) -> CowInlineString {
+        CowInlineString::Inline(InlinableString::from(string))
+    }
+}
+
+impl From<InlinableString> for CowInlineString {
+    #[inline(always)]
+    fn from(string: InlinableString) -> CowInlineString {
+        CowInlineString::Inline(string)
+    }
+}
+
 pub enum Expected<Token, Slice> {
     Token(Option<InlinableString>, Option<Token>),
     Slice(Option<InlinableString>, Option<Slice>),

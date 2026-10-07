@@ -6,6 +6,7 @@ mod text;
 mod text_file;
 mod show;
 mod pear;
+mod position;
 
 pub use self::pear::{Pear, Debugger, Options};
 pub use traits::{Input, Rewind, Token, Slice, ParserInfo};
@@ -13,6 +14,7 @@ pub use cursor::{Cursor, Extent};
 pub use text::{Text, Span};
 pub use length::Length;
 pub use show::Show;
+pub use position::Position;
 
 use crate::error;
 

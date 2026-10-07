@@ -1,5 +1,5 @@
 use crate::error::Expected;
-use crate::input::{Input, Pear, Length, Token, Slice, Result, Rewind};
+use crate::input::{Input, Pear, Length, Token, Slice, Result, Rewind, Position};
 use crate::combinators::succeeds;
 use crate::macros::parser;
 
@@ -428,6 +428,34 @@ pub fn eof<I: Input>(input: &mut Pear<I>) -> Result<(), I> {
         let next = input.token();
         parse_error!(Expected::Eof(next))?
     })
+}
+
+/// Observes the current position without advancing or cloning the input.
+///
+/// Returns the observed [`Position`]: the current input unit and the number
+/// of units consumed so far, in the input's own units. The `observe` closure
+/// is called with a reference to the observed position; if it returns
+/// `Err(cause)`, the failure is converted into a parse error carrying `cause`
+/// as its [`cause`](crate::error::ParseError::cause).
+///
+/// [`Position`]: crate::input::Position
+#[parser(raw)]
+pub fn position<I, F, E>(input: &mut Pear<I>, mut observe: F) -> Result<Position<I>, I>
+    where I: Input,
+          F: FnMut(&Position<I>) -> std::result::Result<(), E>,
+          E: std::fmt::Display
+{
+    let position = input.input.position();
+    if let Err(cause) = observe(&position) {
+        let mut error = parse_error!("position observer failed");
+        if let Err(ref mut e) = error {
+            e.set_cause(iformat!("{}", cause));
+        }
+
+        error?;
+    }
+
+    Ok(position)
 }
 
 /// Like `delimited` but keeps the `start` and `end`.

@@ -1,4 +1,4 @@
-pub use crate::input::{Input, Rewind, Show, ParserInfo};
+pub use crate::input::{Input, Rewind, Show, ParserInfo, Position};
 
 #[cfg(feature = "color")]
 use yansi::Paint;
@@ -188,6 +188,12 @@ impl<'a> Input for Text<'a> {
 
             Span { start, end, cursor, snippet }
         }
+    }
+
+    /// The unit is the current `char`; `consumed` is the number of UTF-8
+    /// bytes consumed so far, consistent with [`Input::mark()`].
+    fn position(&self) -> Position<Self> {
+        Position::new(self.current.chars().next(), self.start.len() - self.current.len())
     }
 }
 

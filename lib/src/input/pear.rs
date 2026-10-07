@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::input::{Input, Rewind, ParserInfo};
+use crate::input::{Input, Rewind, ParserInfo, Position};
 
 pub trait Debugger<I: Input> {
     fn on_entry(&mut self, info: &ParserInfo);
@@ -146,6 +146,12 @@ impl<I: Input> Input for Pear<I> {
     #[inline(always)]
     fn context(&mut self, mark: Self::Marker) -> Self::Context {
         self.input.context(mark)
+    }
+
+    #[inline(always)]
+    fn position(&self) -> Position<Self> {
+        let position = self.input.position();
+        Position::new(position.unit, position.consumed)
     }
 }
 

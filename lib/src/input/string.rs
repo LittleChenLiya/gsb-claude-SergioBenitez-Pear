@@ -1,4 +1,4 @@
-pub use crate::input::{Input, ParserInfo};
+pub use crate::input::{Input, ParserInfo, Position};
 
 impl<'a> Input for &'a str {
     type Token = char;
@@ -98,5 +98,12 @@ impl<'a> Input for &'a str {
     fn context(&mut self, mark: Self::Marker) -> Self::Context {
         let consumed = mark.len() - self.len();
         &mark[..consumed]
+    }
+
+    /// A bare `&str` input tracks no baseline, so `consumed` is always `0`;
+    /// the unit is the current `char`. See [`Text`](crate::input::Text) for a
+    /// string input that tracks consumption.
+    fn position(&self) -> Position<Self> {
+        Position::new(self.chars().next(), 0)
     }
 }

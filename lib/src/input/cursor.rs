@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::input::{Input, Show, Rewind, ParserInfo, Length};
+use crate::input::{Input, Show, Rewind, ParserInfo, Length, Position};
 
 #[derive(Debug)]
 pub struct Cursor<T> {
@@ -282,6 +282,13 @@ impl<T: Indexable + Show + Length + PartialEq> Input for Cursor<T>
         let end = self.offset();
         let values = self.start.slice(mark..end).unwrap();
         Extent { start: mark, end, values }
+    }
+
+    /// The unit is the current item (e.g. `u8` for byte slices); `consumed`
+    /// is the number of items consumed so far, consistent with
+    /// [`Input::mark()`].
+    fn position(&self) -> Position<Self> {
+        Position::new(self.items.head(), self.offset())
     }
 }
 
