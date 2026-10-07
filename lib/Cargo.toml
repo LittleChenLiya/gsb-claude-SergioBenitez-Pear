@@ -16,3 +16,8 @@ inlinable_string = "0.1.15"
 [features]
 default = ["color"]
 color = ["yansi"]
+# Enables the explicit "recover to a delimiter" parser combinator,
+# [`recover_until`](crate::combinators::recover_until), and its supporting
+# types in the [`recovery`](crate::recovery) module. The feature is opt-in;
+# when it is not enabled, the original API and behavior are unchanged.
+recovery = []

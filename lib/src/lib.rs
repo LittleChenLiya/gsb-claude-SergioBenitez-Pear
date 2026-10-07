@@ -11,4 +11,7 @@ pub mod combinators;
 
 mod expected;
 
+#[cfg(feature = "recovery")]
+pub mod recovery;
+
 #[doc(hidden)] pub mod debug;
