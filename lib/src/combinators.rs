@@ -1,4 +1,5 @@
-use crate::input::{Pear, Input, Rewind, Token, Result};
+use crate::error::Expected;
+use crate::input::{Pear, Input, Rewind, Token, Result, ParseError};
 use crate::macros::parser;
 use crate::parsers::*;
 
@@ -241,4 +242,127 @@ pub fn prefixed_series<C, I, T, O, P>(
     }
 
     series(input, item, seperator)
+}
+
+/// Options controlling how [`recover_until_with()`] treats the delimiter once
+/// it is found.
+///
+/// The default (used by [`recover_until()`]) leaves the delimiter in the
+/// input, so existing call sites and follow-up parsers observe the delimiter
+/// exactly as if no recovery had been configured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RecoveryOptions {
+    /// Whether to consume the delimiter token after recovering. When `false`
+    /// (the default), the delimiter is left as the current token.
+    pub consume_delimiter: bool,
+}
+
+/// Information about a parse failure that was recovered from by skipping
+/// input up to a delimiter.
+pub struct Recovered<I: Input> {
+    /// The input range that was skipped: from the position at which the
+    /// failing parser was invoked up to (but excluding) the delimiter.
+    pub skipped: I::Context,
+    /// The original error emitted by the failing parser.
+    pub error: ParseError<I>,
+    /// The delimiter token that terminated the recovery scan.
+    pub delimiter: I::Token,
+}
+
+impl<I: Input> std::fmt::Debug for Recovered<I>
+    where I::Context: std::fmt::Debug,
+          I::Token: std::fmt::Debug,
+          I::Slice: std::fmt::Debug
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Recovered")
+            .field("skipped", &self.skipped)
+            .field("error", &self.error)
+            .field("delimiter", &self.delimiter)
+            .finish()
+    }
+}
+
+/// The result of a [`recover_until()`] or [`recover_until_with()`] parse.
+pub enum Recovery<O, I: Input> {
+    /// The parser succeeded. No recovery scan was performed.
+    Parsed(O),
+    /// The parser failed; input was skipped up to the delimiter.
+    Recovered(Recovered<I>),
+}
+
+impl<O: std::fmt::Debug, I: Input> std::fmt::Debug for Recovery<O, I>
+    where I::Context: std::fmt::Debug,
+          I::Token: std::fmt::Debug,
+          I::Slice: std::fmt::Debug
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Recovery::Parsed(output) => f.debug_tuple("Parsed").field(output).finish(),
+            Recovery::Recovered(recovered) => {
+                f.debug_tuple("Recovered").field(recovered).finish()
+            }
+        }
+    }
+}
+
+/// Parses `p`. If `p` fails, rewinds to the position at which `p` was invoked
+/// and skips tokens until `delimiter` is the current token, then returns
+/// [`Recovery::Recovered`] with the skipped range and the original error. The
+/// delimiter is _not_ consumed; use [`recover_until_with()`] to change this.
+///
+/// If `p` succeeds, returns [`Recovery::Parsed`] without scanning any input.
+/// If EOF is reached before `delimiter` is found, the parse is unrecoverable
+/// and an error is returned.
+///
+/// Recovery performs a single forward scan and never retries `p`, so it
+/// always terminates, even if `p` fails without consuming any input.
+pub fn recover_until<I, T, O, P>(
+    input: &mut Pear<I>,
+    p: P,
+    delimiter: T,
+) -> Result<Recovery<O, I>, I>
+    where I: Input + Rewind,
+          T: Token<I>,
+          P: FnMut(&mut Pear<I>) -> Result<O, I>
+{
+    recover_until_with(input, RecoveryOptions::default(), p, delimiter)
+}
+
+/// Like [`recover_until()`] but with explicit `options` controlling whether
+/// the delimiter token is consumed after recovery.
+#[parser(raw)]
+pub fn recover_until_with<I, T, O, P>(
+    input: &mut Pear<I>,
+    options: RecoveryOptions,
+    mut p: P,
+    delimiter: T,
+) -> Result<Recovery<O, I>, I>
+    where I: Input + Rewind,
+          T: Token<I>,
+          P: FnMut(&mut Pear<I>) -> Result<O, I>
+{
+    let start = parse_current_marker!();
+    match p(input) {
+        Ok(output) => Ok(Recovery::Parsed(output)),
+        Err(error) => {
+            // Discard the failed production entirely, then scan forward to
+            // the delimiter. `skip` consumes one token per step, so the scan
+            // always terminates, even when `p` consumed nothing at all.
+            input.rewind_to(start);
+            input.skip(|t| &delimiter != t);
+            match input.token() {
+                Some(token) if delimiter == token => {
+                    let skipped = input.context(start);
+                    if options.consume_delimiter {
+                        input.eat(|t| &delimiter == t);
+                    }
+
+                    Ok(Recovery::Recovered(Recovered { skipped, error, delimiter: token }))
+                }
+                _ => return parse_error!(Expected::from(
+                    "unrecoverable parse failure: delimiter not found before EOF"))
+            }
+        }
+    }
 }
