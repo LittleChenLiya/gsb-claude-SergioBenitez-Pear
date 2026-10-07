@@ -163,6 +163,28 @@ pub fn peek_any<I: Input>(input: &mut Pear<I>) -> Result<I::Token, I> {
     }
 }
 
+/// Observes the current position without advancing the input.
+///
+/// Calls `f` with the current unit of input (the token), if there is one,
+/// and the number of units consumed so far, as reported by
+/// [`Input::observe()`]. Returns `f`'s output on success. If `f` fails, the
+/// failure is converted into a parse error carrying the failure as its
+/// cause. Observing is read-only: the input is neither cloned nor advanced,
+/// whether `f` succeeds or fails.
+///
+/// [`Input::observe()`]: crate::input::Input::observe()
+#[parser(raw)]
+pub fn observe<I, O, E, F>(input: &mut Pear<I>, f: F) -> Result<O, I>
+    where I: Input,
+          E: std::fmt::Display,
+          F: FnOnce(Option<I::Token>, usize) -> std::result::Result<O, E>
+{
+    match input.observe(f) {
+        Ok(output) => Ok(output),
+        Err(cause) => parse_error!("{}", cause)?,
+    }
+}
+
 /// Skips tokens while `cond` matches.
 #[parser(raw)]
 pub fn skip_while<I, F>(input: &mut Pear<I>, cond: F) -> Result<usize, I>

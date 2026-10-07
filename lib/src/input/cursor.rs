@@ -283,6 +283,15 @@ impl<T: Indexable + Show + Length + PartialEq> Input for Cursor<T>
         let values = self.start.slice(mark..end).unwrap();
         Extent { start: mark, end, values }
     }
+
+    /// Observes the current token and the number of units consumed so far
+    /// without advancing. Consumption is measured in the input's own units:
+    /// bytes for a `Cursor<&[u8]>`, elements for a `Cursor<&[T]>`.
+    fn observe<F, O>(&mut self, f: F) -> O
+        where F: FnOnce(Option<Self::Token>, usize) -> O
+    {
+        f(self.token(), self.offset())
+    }
 }
 
 impl<T: Indexable + Show + Length + PartialEq> Rewind for Cursor<T>

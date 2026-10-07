@@ -71,4 +71,22 @@ pub trait Input: Sized {
     /// Returns a context to identify the input spanning from `mark` until but
     /// excluding the current position.
     fn context(&mut self, _mark: Self::Marker) -> Self::Context;
+
+    /// Observes the current position without advancing the input.
+    ///
+    /// Calls `f` with the current unit of input (the token), if there is
+    /// one, and the number of units consumed so far, returning `f`'s
+    /// output. Observing is read-only: the input is neither cloned nor
+    /// advanced, so repeated observations at the same position return the
+    /// same values.
+    ///
+    /// The default implementation reports `0` units consumed. Inputs that
+    /// track their absolute position, such as [`Text`](crate::input::Text)
+    /// and [`Cursor`](crate::input::Cursor), override this to report the
+    /// actual consumption in their respective units.
+    fn observe<F, O>(&mut self, f: F) -> O
+        where F: FnOnce(Option<Self::Token>, usize) -> O
+    {
+        f(self.token(), 0)
+    }
 }

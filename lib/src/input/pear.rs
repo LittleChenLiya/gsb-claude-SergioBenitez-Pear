@@ -147,6 +147,13 @@ impl<I: Input> Input for Pear<I> {
     fn context(&mut self, mark: Self::Marker) -> Self::Context {
         self.input.context(mark)
     }
+
+    #[inline(always)]
+    fn observe<F, O>(&mut self, f: F) -> O
+        where F: FnOnce(Option<Self::Token>, usize) -> O
+    {
+        self.input.observe(f)
+    }
 }
 
 impl<I: Input + Rewind> Rewind for Pear<I> {

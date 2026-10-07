@@ -189,6 +189,17 @@ impl<'a> Input for Text<'a> {
             Span { start, end, cursor, snippet }
         }
     }
+
+    /// Observes the current `char` and the number of `char`s consumed so far
+    /// without advancing. Consumption is measured in `char`s, the input's
+    /// unit, and _not_ in bytes: a multibyte UTF-8 character counts as one.
+    fn observe<F, O>(&mut self, f: F) -> O
+        where F: FnOnce(Option<Self::Token>, usize) -> O
+    {
+        let bytes_read = self.start.len() - self.current.len();
+        let consumed = self.start[..bytes_read].chars().count();
+        f(self.token(), consumed)
+    }
 }
 
 fn line_col(string: &str) -> (usize, usize) {
